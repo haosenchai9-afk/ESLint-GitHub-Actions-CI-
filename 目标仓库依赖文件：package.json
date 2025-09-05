@@ -1,0 +1,11 @@
+// package.json（放置在目标仓库根目录）
+{
+  "name": "frontend-js-project",
+  "version": "1.0.0",
+  "scripts": {
+    "lint": "eslint . --ext .js"  // 脚本校验的关键命令：检查所有 .js 文件
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"  // ESLint 版本（可使用最新稳定版）
+  }
+}

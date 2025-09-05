@@ -1,0 +1,32 @@
+# .github/workflows/eslint-ci.yml（放置在目标仓库的 .github/workflows 目录）
+name: ESLint CI Check
+
+# 脚本强制校验的触发器：支持 PR 和目标分支 Push
+on:
+  pull_request:
+    branches: [ main, dev/* ]  # PR 合并到 main 或 dev/* 分支时触发
+  push:
+    branches: [ dev/eslint-ci ]  # 推送到 dev/eslint-ci 分支时触发
+
+jobs:
+  lint-check:
+    runs-on: ubuntu-latest  # 使用 Ubuntu 环境
+    steps:
+      # 步骤1：拉取仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 步骤2：设置 Node.js 环境（脚本校验关键字：actions/setup-node@v4、node-version）
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'  # 可根据项目调整 Node 版本（如 16、20）
+          cache: 'npm'        # 缓存 npm 依赖，加速构建
+
+      # 步骤3：安装项目依赖（含 ESLint）
+      - name: Install dependencies
+        run: npm install
+
+      # 步骤4：运行 ESLint 检查（脚本校验关键字：run: npm run lint）
+      - name: Run ESLint
+        run: npm run lint

@@ -1,0 +1,254 @@
+# ESLint CI Workflow 验证脚本 - 所需物料清单及生成内容
+要让脚本正常运行，需准备 **本地文件类物料**（环境配置、目标仓库文件）和 **链接类物料**（权限令牌、参考文档），以下是完整物料及生成内容：
+
+
+## 一、本地文件类物料（共5类）
+本地文件分为「脚本运行依赖文件」和「目标仓库待校验文件」，需分别创建并放置到对应位置。
+
+
+### 1. 脚本运行依赖文件：`.env`（环境变量配置文件）
+#### 用途
+存储 GitHub 认证信息（避免硬编码），脚本通过 `python-dotenv` 加载此文件中的 `GITHUB_TOKEN` 和 `GITHUB_ORG`。
+#### 生成内容
+```env
+# .env 文件（需替换 <> 中的实际值）
+# GitHub 个人访问令牌（用于调用 API 访问仓库、PR、工作流）
+GITHUB_TOKEN=<your_github_personal_access_token>
+# GitHub 组织/用户名（目标仓库所属的组织或个人账号，如 "octocat"）
+GITHUB_ORG=<your_github_organization_or_username>
+```
+#### 创建说明
+- 放置位置：与验证脚本（`verify_eslint_ci_workflow.py`）在同一目录；
+- 敏感提醒：**必须添加到 `.gitignore`**（避免提交到代码库泄露令牌），后续会生成 `.gitignore` 物料。
+
+
+### 2. 目标仓库待校验文件：`.eslintrc.json`（ESLint 配置文件）
+#### 用途
+定义前端项目的 ESLint 代码规范，脚本会校验此文件是否包含 `no-console`、`indent` 等必需规则，且 JSON 格式合法。
+#### 生成内容
+```json
+// .eslintrc.json（放置在目标仓库根目录）
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": "latest"
+  },
+  "rules": {
+    // 脚本强制校验的 5 个核心规则（不可缺少）
+    "no-console": "error",        // 禁止使用 console.log
+    "indent": ["error", 2],       // 强制 2 个空格缩进（禁止 Tab）
+    "quotes": ["error", "double"],// 强制双引号（可改为 "single"，但需统一）
+    "semi": ["error", "always"],  // 强制语句结尾加分号
+    "no-unused-vars": "error"     // 禁止未使用的变量
+  }
+}
+```
+#### 创建说明
+- 放置位置：目标仓库（`frontend-js-project`）的 **`dev/eslint-ci` 分支根目录**（脚本默认目标分支为 `dev/eslint-ci`）；
+- 规则说明：如需调整规则（如双引号改单引号），需确保脚本校验的 `required_rules` 列表（`no-console` 等）均存在。
+
+
+### 3. 目标仓库待校验文件：`.github/workflows/eslint-ci.yml`（CI 工作流文件）
+#### 用途
+定义 GitHub Actions 自动化流程，脚本会校验此文件是否包含必需关键字（如 `eslint`、`setup-node`）和触发器（`pull_request`、`push`）。
+#### 生成内容
+```yaml
+# .github/workflows/eslint-ci.yml（放置在目标仓库的 .github/workflows 目录）
+name: ESLint CI Check
+
+# 脚本强制校验的触发器：支持 PR 和目标分支 Push
+on:
+  pull_request:
+    branches: [ main, dev/* ]  # PR 合并到 main 或 dev/* 分支时触发
+  push:
+    branches: [ dev/eslint-ci ]  # 推送到 dev/eslint-ci 分支时触发
+
+jobs:
+  lint-check:
+    runs-on: ubuntu-latest  # 使用 Ubuntu 环境
+    steps:
+      # 步骤1：拉取仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 步骤2：设置 Node.js 环境（脚本校验关键字：actions/setup-node@v4、node-version）
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'  # 可根据项目调整 Node 版本（如 16、20）
+          cache: 'npm'        # 缓存 npm 依赖，加速构建
+
+      # 步骤3：安装项目依赖（含 ESLint）
+      - name: Install dependencies
+        run: npm install
+
+      # 步骤4：运行 ESLint 检查（脚本校验关键字：run: npm run lint）
+      - name: Run ESLint
+        run: npm run lint
+```
+#### 创建说明
+- 放置位置：目标仓库 **`dev/eslint-ci` 分支**的 `.github/workflows` 目录（需先创建 `.github/workflows` 文件夹）；
+- 依赖前提：项目 `package.json` 中需配置 `lint` 脚本（后续生成 `package.json` 物料）。
+
+
+### 4. 目标仓库待校验文件：`src/example.js`（测试示例文件）
+#### 用途
+脚本校验的「测试载体」：初始提交时包含 ESLint 错误（使工作流失败），修复后提交（使工作流成功），需准备 **错误版本** 和 **修复版本**。
+#### 生成内容（1）：错误版本（初始提交用）
+```javascript
+// src/example.js（错误版本：含 ESLint 违规）
+var unusedVar = "this variable is not used"; // 违反 no-unused-vars
+console.log("debug info"); // 违反 no-console
+const str = 'single quote' // 违反 quotes（强制双引号）+ 违反 semi（缺少分号）
+function test() {
+\treturn "tab indent"; // 违反 indent（使用 Tab 缩进）
+}
+```
+#### 生成内容（2）：修复版本（后续提交用）
+```javascript
+// src/example.js（修复版本：符合所有 ESLint 规则）
+const usedVar = "this variable is used"; // 修复 no-unused-vars（变量已使用）
+// console.log("debug info"); // 修复 no-console（注释或删除）
+const str = "double quote"; // 修复 quotes（双引号）+ 修复 semi（加分号）
+function test() {
+  return "space indent"; // 修复 indent（2 个空格缩进）
+}
+
+// 新增：使用变量，避免 no-unused-vars
+console.log(usedVar);
+test();
+```
+#### 创建说明
+- 放置位置：目标仓库 **`dev/eslint-ci` 分支**的 `src` 目录（需先创建 `src` 文件夹）；
+- 提交逻辑：先提交「错误版本」到 `dev/eslint-ci` 分支（触发工作流失败），再提交「修复版本」（触发工作流成功），形成脚本校验的「失败→成功」序列。
+
+
+### 5. 辅助文件：`.gitignore`（忽略敏感文件）
+#### 用途
+防止 `.env` 等敏感文件提交到 GitHub，避免 `GITHUB_TOKEN` 泄露。
+#### 生成内容
+```
+# .gitignore 文件（与验证脚本、.env 在同一目录）
+# 忽略环境变量文件
+.env
+# 忽略 Python 依赖缓存
+__pycache__/
+venv/
+# 忽略日志文件（如需输出日志可添加）
+*.log
+```
+#### 创建说明
+- 放置位置：与验证脚本（`verify_eslint_ci_workflow.py`）、`.env` 在同一目录；
+- 额外提醒：目标仓库的 `.gitignore` 也建议添加 `.env`（若仓库本地也需配置环境变量）。
+
+
+### 6. 目标仓库依赖文件：`package.json`（项目依赖配置）
+#### 用途
+定义项目依赖（含 ESLint）和 `lint` 脚本，确保 CI 工作流中 `npm run lint` 可执行。
+#### 生成内容
+```json
+// package.json（放置在目标仓库根目录）
+{
+  "name": "frontend-js-project",
+  "version": "1.0.0",
+  "scripts": {
+    "lint": "eslint . --ext .js"  // 脚本校验的关键命令：检查所有 .js 文件
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"  // ESLint 版本（可使用最新稳定版）
+  }
+}
+```
+#### 创建说明
+- 放置位置：目标仓库 **`dev/eslint-ci` 分支**根目录；
+- 安装步骤：本地开发时需执行 `npm install` 安装 ESLint，CI 工作流中会自动执行此命令（见 `eslint-ci.yml` 步骤3）。
+
+
+## 二、链接类物料（共3类）
+链接类物料用于获取权限、参考配置文档，确保本地文件配置符合要求。
+
+
+### 1. GitHub 个人访问令牌（PAT）获取链接
+#### 用途
+生成 `.env` 中所需的 `GITHUB_TOKEN`，需具备访问仓库、PR、工作流的权限。
+#### 链接地址
+[GitHub PAT 创建页](https://github.com/settings/tokens/new)
+#### 权限配置（必须勾选）
+- **repo**：全选（包含 `repo:status`、`repo_deployment` 等，确保能访问仓库代码、PR、工作流）；
+- **workflow**：勾选（允许访问 GitHub Actions 工作流）；
+- 有效期：建议选择「No expiration」（避免频繁重新生成，生产环境可按需求设置）。
+#### 操作步骤
+1. 打开上述链接，填写「Note」（如 `ESLint-CI-Verification-Token`）；
+2. 勾选上述权限，点击「Generate token」；
+3. 复制生成的令牌，粘贴到 `.env` 的 `GITHUB_TOKEN` 字段（**仅显示一次，需立即保存**）。
+
+
+### 2. 参考文档链接（帮助配置文件）
+| 文档用途                | 官方链接                                                                 | 用途说明                                  |
+|-------------------------|--------------------------------------------------------------------------|-----------------------------------------|
+| ESLint 规则配置         | [ESLint Rules 文档](https://eslint.org/docs/rules/)                      | 查看 `no-console`、`indent` 等规则的详细配置 |
+| GitHub Actions setup-node | [actions/setup-node 文档](https://github.com/actions/setup-node)         | 确认 `actions/setup-node@v4` 用法及 Node 版本支持 |
+| ESLint CLI 命令         | [ESLint CLI 文档](https://eslint.org/docs/user-guide/command-line-interface) | 理解 `eslint . --ext .js` 命令的作用      |
+
+
+### 3. 目标仓库分支创建指引
+#### 用途
+确保目标仓库存在 `dev/eslint-ci` 分支（脚本默认校验此分支），并将上述待校验文件（`.eslintrc.json`、`eslint-ci.yml` 等）放置到该分支。
+#### 操作步骤（本地 Git 命令）
+```bash
+# 1. 克隆目标仓库（替换 <repo-url> 为实际仓库 URL）
+git clone <repo-url> frontend-js-project
+cd frontend-js-project
+
+# 2. 创建并切换到 dev/eslint-ci 分支
+git checkout -b dev/eslint-ci
+
+# 3. 创建所需目录（.github/workflows、src）
+mkdir -p .github/workflows src
+
+# 4. 将上述待校验文件（.eslintrc.json、eslint-ci.yml、src/example.js、package.json）复制到对应位置
+# （手动复制或使用 cp 命令）
+
+# 5. 初始提交（错误版本的 src/example.js）
+git add .
+git commit -m "feat: add ESLint CI config + initial example (with lint errors)"
+git push -u origin dev/eslint-ci
+
+# 6. 修复 src/example.js 为修复版本，再次提交
+git add src/example.js
+git commit -m "fix: resolve ESLint errors in example.js"
+git push origin dev/eslint-ci
+
+# 7. 在 GitHub 网页端创建 PR：从 dev/eslint-ci 合并到 main，PR 标题含 "ESLint CI Workflow"
+```
+
+
+## 三、脚本运行前的最终检查清单
+1. [ ] `.env` 文件已创建，`GITHUB_TOKEN` 和 `GITHUB_ORG` 填写正确；
+2. [ ] 目标仓库 `dev/eslint-ci` 分支已创建，且包含以下文件：
+   - `.eslintrc.json`（含 5 个必需规则）；
+   - `.github/workflows/eslint-ci.yml`（含 `pull_request`/`push` 触发器和 `npm run lint`）；
+   - `src/example.js`（已提交「错误→修复」2 次提交）；
+   - `package.json`（含 `lint` 脚本和 ESLint 依赖）；
+3. [ ] 目标仓库已创建 PR，标题含「ESLint CI Workflow」，PR body 包含以下 sections（脚本校验 PR 结构）：
+   ```markdown
+   ## ESLint 配置说明
+   配置了 no-console、indent、quotes、semi、no-unused-vars 规则，确保代码规范。
+
+   ## 工作流触发条件
+   - PR 合并到 main 或 dev/* 分支时触发
+   - 推送到 dev/eslint-ci 分支时触发
+
+   ## 测试结果（含 lint 错误修复）
+   初始提交含 lint 错误（工作流失败），修复后工作流成功。
+   ```
+4. [ ] 已安装脚本依赖：`pip install requests python-dotenv`；
+5. [ ] `.env` 已添加到 `.gitignore`，避免敏感信息泄露。
+
+
+完成以上所有物料准备后，运行 `python verify_eslint_ci_workflow.py` 即可让脚本正常执行，校验 ESLint CI 工作流的合规性。
